@@ -3,11 +3,21 @@ import express from "express";
 import cors from "cors";
 import { nanoid } from "nanoid";
 import bodyParser from "body-parser";
-// TODO: connect DB (Mongo via Mongoose or Postgres via Prisma)
+import dotenv from "dotenv";
+import connectDB from "./config/database.js";
+import productRoutes from "./routes/productRoutes.js";
+import appointmentRoutes from "./routes/appointmentRoutes.js";
+
+// Load environment variables
+dotenv.config();
+
+// Connect to MongoDB
+connectDB();
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 
 const makeRef = () => {
   const d = new Date();
@@ -16,11 +26,11 @@ const makeRef = () => {
   return `GLS-${yyyymmdd}-${code}`;
 };
 
-// Products (public)
-app.get("/api/products", async (req, res) => {
-  // const items = await db.products.findMany({ where: { active: true }});
-  res.json([]); // placeholder
-});
+// Product routes
+app.use("/api/products", productRoutes);
+
+// Appointment routes
+app.use("/api/appointments", appointmentRoutes);
 
 // Create order → returns REF + WhatsApp link text payload
 app.post("/api/orders", async (req, res) => {
@@ -53,10 +63,10 @@ app.post("/api/orders/:id/mark-paid", async (req, res) => {
   res.json({ ok: true });
 });
 
-app.post("/api/appointments", async (req, res) => {
-  // save appointment
-  res.json({ ok: true });
-});
 
-app.listen(4000, () => console.log("API running on :4000"));
+const PORT = process.env.PORT || 4000;
+
+app.listen(PORT, () => {
+  console.log(`API running on :${PORT}`);
+});
 ``

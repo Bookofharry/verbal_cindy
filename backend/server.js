@@ -1,12 +1,17 @@
 // server/index.js
 import express from "express";
+
 import cors from "cors";
+
 import { nanoid } from "nanoid";
+
 import bodyParser from "body-parser";
+
 import dotenv from "dotenv";
+
 import connectDB from "./config/database.js";
-import productRoutes from "./routes/productRoutes.js";
 import appointmentRoutes from "./routes/appointmentRoutes.js";
+import productRoutes from "./routes/productRoutes.js";
 
 // Load environment variables
 dotenv.config();
@@ -28,6 +33,9 @@ const makeRef = () => {
 
 // Product routes
 app.use("/api/products", productRoutes);
+app.get('/', (req, res) => {
+  res.send('Api Working!');
+});
 
 // Appointment routes
 app.use("/api/appointments", appointmentRoutes);

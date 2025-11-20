@@ -1,6 +1,8 @@
 import express from 'express';
 import Appointment from '../models/Appointment.js';
 import { nanoid } from 'nanoid';
+import { authenticateAdmin } from '../middleware/authMiddleware.js';
+import { validate, appointmentValidation } from '../middleware/validationMiddleware.js';
 
 const router = express.Router();
 
@@ -12,8 +14,8 @@ const makeRef = () => {
   return `CEC-${yyyymmdd}-${code}`;
 };
 
-// GET /api/appointments - Get all appointments (with optional filters)
-router.get('/', async (req, res) => {
+// GET /api/appointments - Get all appointments (Admin only)
+router.get('/', authenticateAdmin, async (req, res) => {
   try {
     const { status, date, upcoming } = req.query;
     
@@ -67,8 +69,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/appointments - Create new appointment
-router.post('/', async (req, res) => {
+// POST /api/appointments - Create new appointment (Public)
+router.post('/', validate(appointmentValidation), async (req, res) => {
   try {
     const {
       firstName,
@@ -138,8 +140,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/appointments/:id - Update appointment
-router.put('/:id', async (req, res) => {
+// PUT /api/appointments/:id - Update appointment (Admin only)
+router.put('/:id', authenticateAdmin, async (req, res) => {
   try {
     const {
       firstName,
@@ -191,8 +193,8 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// DELETE /api/appointments/:id - Delete appointment
-router.delete('/:id', async (req, res) => {
+// DELETE /api/appointments/:id - Delete appointment (Admin only)
+router.delete('/:id', authenticateAdmin, async (req, res) => {
   try {
     const appointment = await Appointment.findByIdAndDelete(req.params.id);
     

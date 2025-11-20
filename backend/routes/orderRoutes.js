@@ -1,6 +1,9 @@
 import express from 'express';
 import Order from '../models/Order.js';
+import Product from '../models/Product.js';
 import { nanoid } from 'nanoid';
+import { authenticateAdmin } from '../middleware/authMiddleware.js';
+import { validate, orderValidation } from '../middleware/validationMiddleware.js';
 
 const router = express.Router();
 
@@ -89,6 +92,34 @@ router.post('/', async (req, res) => {
       return res.status(400).json({ error: 'Customer information is required' });
     }
 
+    // Check stock availability (but don't deduct yet - will deduct when marked as paid)
+    const stockErrors = [];
+    
+    for (const item of items) {
+      const productId = item.productId || item.id;
+      if (!productId) continue;
+      
+      const product = await Product.findById(productId);
+      if (!product) {
+        stockErrors.push(`Product ${item.title || item.name} not found`);
+        continue;
+      }
+      
+      // Check if product is in stock (reserve check, don't deduct yet)
+      if (!product.inStock || product.amountInStock < item.qty) {
+        stockErrors.push(`${product.name} - Only ${product.amountInStock} available, requested ${item.qty}`);
+      }
+    }
+    
+    if (stockErrors.length > 0) {
+      return res.status(400).json({ 
+        error: 'Stock unavailable', 
+        details: stockErrors 
+      });
+    }
+    
+    // Note: Stock will be deducted when order is marked as paid
+
     // Calculate totals
     const subtotal = items.reduce((sum, item) => sum + (item.price * item.qty), 0);
     const total = Math.max(0, subtotal + (parseFloat(shippingFee) || 0) - (parseFloat(discount) || 0));
@@ -164,8 +195,8 @@ router.post('/', async (req, res) => {
   }
 });
 
-// PUT /api/orders/:id - Update order
-router.put('/:id', async (req, res) => {
+// PUT /api/orders/:id - Update order (Admin only)
+router.put('/:id', authenticateAdmin, async (req, res) => {
   try {
     const { status, shippingFee, discount } = req.body;
 
@@ -175,9 +206,26 @@ router.put('/:id', async (req, res) => {
       return res.status(404).json({ error: 'Order not found' });
     }
 
+    const previousStatus = order.status;
+
     // Update fields if provided
     if (status !== undefined) {
       if (['pending', 'paid', 'shipped', 'delivered', 'cancelled'].includes(status)) {
+        // If order was paid and is now being cancelled, restore stock
+        if (previousStatus === 'paid' && status === 'cancelled') {
+          for (const item of order.items) {
+            const productId = item.productId;
+            if (!productId) continue;
+            
+            const product = await Product.findById(productId);
+            if (product) {
+              product.amountInStock = (product.amountInStock || 0) + item.qty;
+              product.inStock = true; // Restore inStock status
+              await product.save();
+            }
+          }
+        }
+        
         order.status = status;
       }
     }
@@ -207,28 +255,194 @@ router.put('/:id', async (req, res) => {
   }
 });
 
-// POST /api/orders/:id/mark-paid - Mark order as paid
+// POST /api/orders/:id/mark-paid - Mark order as paid and deduct stock
+// This endpoint:
+// 1. Finds the product by productId
+// 2. Checks the product category
+// 3. Checks the current quantity/stock
+// 4. Subtracts the ordered quantity
+// 5. Updates the database
 router.post('/:id/mark-paid', async (req, res) => {
   try {
-    const order = await Order.findByIdAndUpdate(
-      req.params.id,
-      { status: 'paid' },
-      { new: true }
-    );
+    const order = await Order.findById(req.params.id);
     
     if (!order) {
       return res.status(404).json({ error: 'Order not found' });
     }
+
+    console.log(`🔍 Processing mark-paid for order ${order.ref}, current status: ${order.status}`);
+
+    // Check if order is already paid
+    if (order.status === 'paid') {
+      return res.status(400).json({
+        ok: false,
+        error: 'Order already paid',
+        message: `Order ${order.ref} has already been marked as paid. Stock was already deducted when it was first marked as paid.`,
+        order
+      });
+    }
+
+    // Check if order is cancelled
+    if (order.status === 'cancelled') {
+      return res.status(400).json({
+        ok: false,
+        error: 'Cannot mark cancelled order as paid',
+        message: `Order ${order.ref} has been cancelled and cannot be marked as paid.`,
+        order
+      });
+    }
+
+    // Only process if order is pending
+    if (order.status === 'pending') {
+      console.log(`📦 Order ${order.ref} is pending, processing ${order.items.length} items`);
+      
+      const stockUpdates = [];
+      const stockErrors = [];
+      
+      // Process each item in the order
+      for (const item of order.items) {
+        const productId = item.productId;
+        const orderedQty = item.qty;
+        
+        // Step 1: Validate productId exists
+        if (!productId) {
+          const error = `Item "${item.title}" has no productId`;
+          console.warn(`⚠️ Order ${order.ref}: ${error}`);
+          stockErrors.push(error);
+          continue;
+        }
+        
+        console.log(`\n📋 Processing item: ${item.title}`);
+        console.log(`   Product ID: ${productId}`);
+        console.log(`   Ordered Quantity: ${orderedQty}`);
+        
+        // Step 2: Find product by productId
+        const product = await Product.findById(productId);
+        if (!product) {
+          const error = `Product not found with ID: ${productId} for item "${item.title}"`;
+          console.error(`❌ Order ${order.ref}: ${error}`);
+          stockErrors.push(error);
+          continue;
+        }
+        
+        console.log(`✅ Product found: ${product.name}`);
+        
+        // Step 3: Check product category
+        const category = product.category;
+        console.log(`   Category: ${category}`);
+        
+        if (!category || !['frames', 'lenses', 'eyedrop', 'accessories'].includes(category)) {
+          const error = `Invalid category "${category}" for product ${product.name}`;
+          console.error(`❌ Order ${order.ref}: ${error}`);
+          stockErrors.push(error);
+          continue;
+        }
+        
+        // Step 4: Check current quantity/stock
+        const currentStock = product.amountInStock || 0;
+        const isInStock = product.inStock !== false;
+        
+        console.log(`   Current Stock: ${currentStock}`);
+        console.log(`   In Stock Status: ${isInStock}`);
+        
+        // Step 5: Validate sufficient stock
+        if (!isInStock || currentStock < orderedQty) {
+          const error = `${product.name} (${category}) - Only ${currentStock} available, ordered ${orderedQty}`;
+          console.error(`❌ Order ${order.ref}: ${error}`);
+          stockErrors.push(error);
+          continue;
+        }
+        
+        // Step 6: Calculate new stock quantity
+        const newStock = Math.max(0, currentStock - orderedQty);
+        const wasInStock = product.inStock;
+        const willBeInStock = newStock > 0;
+        
+        console.log(`   Stock Calculation: ${currentStock} - ${orderedQty} = ${newStock}`);
+        
+        // Step 7: Update product stock
+        product.amountInStock = newStock;
+        product.inStock = willBeInStock;
+        
+        // Step 8: Save to database
+        await product.save();
+        
+        // Step 9: Verify the update
+        const verifyProduct = await Product.findById(productId);
+        if (verifyProduct.amountInStock !== newStock) {
+          const error = `Stock update verification failed for ${product.name}`;
+          console.error(`❌ Order ${order.ref}: ${error}`);
+          stockErrors.push(error);
+          continue;
+        }
+        
+        console.log(`✅ Successfully updated ${product.name}:`);
+        console.log(`   Stock: ${currentStock} → ${newStock}`);
+        console.log(`   In Stock: ${wasInStock} → ${willBeInStock}`);
+        console.log(`   Category: ${category}`);
+        
+        stockUpdates.push({
+          productId,
+          productName: product.name,
+          category,
+          previousStock: currentStock,
+          orderedQty,
+          newStock,
+        });
+      }
+      
+      // If there are any errors, return them
+      if (stockErrors.length > 0) {
+        return res.status(400).json({ 
+          ok: false,
+          error: 'Stock update failed', 
+          details: stockErrors,
+          message: 'Cannot mark as paid - some items have insufficient stock',
+          stockUpdates: stockUpdates.length > 0 ? stockUpdates : undefined
+        });
+      }
+      
+      console.log(`\n✅ All stock updates completed for order ${order.ref}`);
+      console.log(`   Updated ${stockUpdates.length} products`);
+      
+      // Update order status to paid
+      order.status = 'paid';
+      await order.save();
+      
+      console.log(`✅ Order ${order.ref} marked as paid successfully`);
+      
+      res.json({ 
+        ok: true, 
+        order, 
+        message: 'Order marked as paid and stock updated successfully',
+        stockUpdated: true,
+        stockUpdates: stockUpdates
+      });
+      
+    } else {
+      // This should not happen due to checks above, but handle it anyway
+      console.log(`⚠️ Order ${order.ref} has unexpected status: ${order.status}`);
+      
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid order status',
+        message: `Order ${order.ref} has status "${order.status}" and cannot be marked as paid. Only pending orders can be marked as paid.`,
+        order
+      });
+    }
     
-    res.json({ ok: true, order, message: 'Order marked as paid' });
   } catch (error) {
-    console.error('Error marking order as paid:', error);
-    res.status(500).json({ error: 'Failed to mark order as paid' });
+    console.error('❌ Error marking order as paid:', error);
+    res.status(500).json({ 
+      ok: false,
+      error: 'Failed to mark order as paid',
+      message: error.message 
+    });
   }
 });
 
-// DELETE /api/orders/:id - Delete order
-router.delete('/:id', async (req, res) => {
+// DELETE /api/orders/:id - Delete order (Admin only)
+router.delete('/:id', authenticateAdmin, async (req, res) => {
   try {
     const order = await Order.findByIdAndDelete(req.params.id);
     

@@ -3,6 +3,8 @@ import multer from 'multer';
 import Product from '../models/Product.js';
 import cloudinary from '../config/cloudinary.js';
 import { Readable } from 'stream';
+import { authenticateAdmin } from '../middleware/authMiddleware.js';
+import { validate, productValidation } from '../middleware/validationMiddleware.js';
 
 const router = express.Router();
 
@@ -43,6 +45,41 @@ const uploadToCloudinary = (buffer) => {
   });
 };
 
+// GET /api/products/search - Search products
+router.get('/search', async (req, res) => {
+  try {
+    const { q, category } = req.query;
+    
+    if (!q || q.trim() === '') {
+      return res.status(400).json({ error: 'Search query is required' });
+    }
+
+    // Build search query - search in name, description, code, and category
+    const searchRegex = new RegExp(q.trim(), 'i'); // Case-insensitive
+    
+    const query = {
+      $or: [
+        { name: searchRegex },
+        { description: searchRegex },
+        { code: searchRegex },
+        { category: searchRegex }
+      ]
+    };
+
+    // Add category filter if provided
+    if (category) {
+      query.category = category;
+    }
+
+    const products = await Product.find(query).sort({ createdAt: -1 });
+    
+    res.json(products);
+  } catch (error) {
+    console.error('Error searching products:', error);
+    res.status(500).json({ error: 'Failed to search products' });
+  }
+});
+
 // GET /api/products - Get all products (with optional category filter)
 router.get('/', async (req, res) => {
   try {
@@ -50,6 +87,14 @@ router.get('/', async (req, res) => {
     const query = category ? { category } : {};
 
     const products = await Product.find(query).sort({ createdAt: -1 });
+    
+    // Set headers to prevent caching
+    res.set({
+      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0'
+    });
+    
     res.json(products);
   } catch (error) {
     console.error('Error fetching products:', error);
@@ -71,8 +116,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/products - Create new product
-router.post('/', upload.single('image'), async (req, res) => {
+// POST /api/products - Create new product (Admin only)
+router.post('/', authenticateAdmin, upload.single('image'), validate(productValidation), async (req, res) => {
   try {
     const {
       name,
@@ -145,8 +190,8 @@ router.post('/', upload.single('image'), async (req, res) => {
   }
 });
 
-// PUT /api/products/:id - Update product
-router.put('/:id', upload.single('image'), async (req, res) => {
+// PUT /api/products/:id - Update product (Admin only)
+router.put('/:id', authenticateAdmin, upload.single('image'), validate(productValidation), async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
     if (!product) {
@@ -206,8 +251,8 @@ router.put('/:id', upload.single('image'), async (req, res) => {
   }
 });
 
-// DELETE /api/products/:id - Delete product
-router.delete('/:id', async (req, res) => {
+// DELETE /api/products/:id - Delete product (Admin only)
+router.delete('/:id', authenticateAdmin, async (req, res) => {
   try {
     const product = await Product.findByIdAndDelete(req.params.id);
     if (!product) {

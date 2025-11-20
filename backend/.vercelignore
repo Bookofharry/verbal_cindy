@@ -1,0 +1,17 @@
+# Ignore git submodules
+.gitmodules
+
+# Ignore development files
+*.md
+!README.md
+
+# Ignore test files
+test/
+tests/
+__tests__/
+
+# Ignore documentation
+docs/
+*.md
+!README.md
+

@@ -104,8 +104,8 @@ router.post('/', async (req, res) => {
       }
     }
 
-    // Create WhatsApp message
-    const lineItems = items.map(i => `• ${i.title} x${i.qty} — ₦${i.price.toLocaleString()}`).join('%0A');
+    // Create WhatsApp message (store as plain text with newlines, frontend will encode for URL)
+    const lineItems = items.map(i => `• ${i.title} x${i.qty} — ₦${i.price.toLocaleString()}`).join('\n');
     const whatsappMessage = [
       `Hello, I want to pay for my order.`,
       `Reference: ${ref}`,
@@ -114,7 +114,7 @@ router.post('/', async (req, res) => {
       `Total: ₦${total.toLocaleString()}`,
       `Items:`,
       lineItems
-    ].join('%0A'); // URL-encoded newlines for WhatsApp
+    ].join('\n'); // Plain text with newlines - frontend will encode for WhatsApp URL
 
     // Create order
     const order = new Order({

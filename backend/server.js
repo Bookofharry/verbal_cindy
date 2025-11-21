@@ -136,8 +136,24 @@ app.use(bodyParser.urlencoded({ extended: true }));
 app.use(sanitizeInput);
 
 
-// Ensure DB connection before handling requests (for serverless)
+// Health check endpoint - should work even without DB
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    message: 'API is working',
+    database: dbConnected ? 'connected' : 'not connected',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Ensure DB connection before handling API requests (for serverless)
+// Skip DB check for health endpoint
 app.use(async (req, res, next) => {
+  // Skip DB check for health endpoint
+  if (req.path === '/' || req.path === '') {
+    return next();
+  }
+  
   if (!dbConnected) {
     try {
       await connectDBWithRetry();
@@ -148,11 +164,11 @@ app.use(async (req, res, next) => {
       let errorMessage = error.message || 'Database connection failed';
       let hint = 'Make sure MONGODB_URI is set in Vercel environment variables';
       
-      if (error.message && error.message.includes('IP') || error.message.includes('whitelist')) {
+      if (error.message && (error.message.includes('IP') || error.message.includes('whitelist'))) {
         hint = 'MongoDB Atlas IP whitelist issue. Add 0.0.0.0/0 to MongoDB Atlas Network Access. See MONGODB_ATLAS_IP_WHITELIST_FIX.md';
       } else if (error.message && error.message.includes('authentication')) {
         hint = 'Check MongoDB username and password in MONGODB_URI';
-      } else if (error.message && error.message.includes('ENOTFOUND') || error.message.includes('DNS')) {
+      } else if (error.message && (error.message.includes('ENOTFOUND') || error.message.includes('DNS'))) {
         hint = 'Check MongoDB cluster URL in MONGODB_URI';
       }
       
@@ -164,15 +180,6 @@ app.use(async (req, res, next) => {
     }
   }
   next();
-});
-
-// Health check
-app.get('/', (req, res) => {
-  res.json({ 
-    status: 'ok', 
-    message: 'API is working',
-    timestamp: new Date().toISOString()
-  });
 });
 
 // Auth routes (public)

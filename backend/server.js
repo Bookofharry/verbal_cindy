@@ -95,9 +95,33 @@ app.use(cors({
   optionsSuccessStatus: 204
 }));
 
-// Handle preflight requests explicitly
-// Express 5 doesn't support '*' wildcard, so we handle OPTIONS in CORS middleware instead
-// The cors() middleware already handles OPTIONS requests automatically
+// Handle preflight requests explicitly for all routes
+// Express 5 doesn't support '*' wildcard, so we use a catch-all pattern
+app.options('/*', (req, res) => {
+  const origin = req.headers.origin;
+  
+  // Use same origin logic as CORS middleware
+  let allowOrigin = null;
+  if (allowedOrigins.length === 0) {
+    // Allow all if no origins configured
+    allowOrigin = origin || '*';
+  } else if (origin && allowedOrigins.includes(origin)) {
+    allowOrigin = origin;
+  } else if (!origin && process.env.NODE_ENV !== 'production') {
+    allowOrigin = '*';
+  }
+  
+  if (allowOrigin) {
+    res.header('Access-Control-Allow-Origin', allowOrigin);
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Max-Age', '86400');
+    res.sendStatus(204);
+  } else {
+    res.status(403).json({ error: 'CORS policy: Origin not allowed' });
+  }
+});
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));

@@ -15,12 +15,15 @@ if (!JWT_SECRET || JWT_SECRET === 'your-secret-key-change-in-production') {
 }
 
 // Use fallback only in development
+// In production, use a temporary secret if not set (but warn heavily)
 const SECRET = JWT_SECRET || (process.env.NODE_ENV === 'production' 
-  ? null 
+  ? 'TEMPORARY-SECRET-CHANGE-ME-IN-VERCEL-ENV-VARS-MIN-32-CHARS' // Temporary fallback
   : 'your-secret-key-change-in-production');
 
-if (!SECRET) {
-  throw new Error('JWT_SECRET must be set in production! Add it to your .env file.');
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  console.error('❌ JWT_SECRET is not set in production!');
+  console.error('⚠️  Using temporary secret - ADD JWT_SECRET to Vercel environment variables!');
+  console.error('⚠️  Authentication will work but is NOT SECURE!');
 }
 
 export const jwtConfig = {

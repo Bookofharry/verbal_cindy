@@ -19,26 +19,43 @@ import { sanitizeInput } from "./middleware/validationMiddleware.js";
 // Load environment variables
 dotenv.config();
 
+// Check critical environment variables
+const requiredEnvVars = ['MONGODB_URI'];
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0 && process.env.NODE_ENV === 'production') {
+  console.error('❌ Missing required environment variables:', missingVars.join(', '));
+  console.error('⚠️  Please set these in Vercel environment variables');
+}
+
 // Connect to MongoDB (with retry logic for serverless)
 let dbConnected = false;
+let dbConnectionError = null;
+
 const connectDBWithRetry = async () => {
   if (dbConnected) return;
+  if (dbConnectionError) throw dbConnectionError; // Don't retry if we know it will fail
   
   try {
+    if (!process.env.MONGODB_URI) {
+      throw new Error('MONGODB_URI is not set in environment variables');
+    }
     await connectDB();
     dbConnected = true;
+    dbConnectionError = null;
   } catch (error) {
-    console.error('Database connection error:', error);
-    // Don't exit in serverless - let the function handle it
-    if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
-      process.exit(1);
-    }
+    console.error('Database connection error:', error.message);
+    dbConnectionError = error;
+    // Don't exit in serverless - throw error instead
+    throw error;
   }
 };
 
 // Connect immediately (for local dev) or on first request (for serverless)
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
-  connectDBWithRetry();
+  connectDBWithRetry().catch(err => {
+    console.error('Initial database connection failed:', err.message);
+  });
 }
 
 const app = express();
@@ -98,10 +115,11 @@ app.use(async (req, res, next) => {
     try {
       await connectDBWithRetry();
     } catch (error) {
-      console.error('Failed to connect to database:', error);
+      console.error('Failed to connect to database:', error.message);
       return res.status(503).json({
         error: 'Database connection failed',
-        message: 'Please check your MongoDB connection string'
+        message: error.message || 'Please check your MongoDB connection string and environment variables',
+        hint: 'Make sure MONGODB_URI is set in Vercel environment variables'
       });
     }
   }
@@ -132,11 +150,33 @@ app.use("/api/orders", orderRoutes);
 
 // Error handling middleware (should be last)
 app.use((err, req, res, next) => {
-  console.error('Error:', err);
-  res.status(err.status || 500).json({
-    error: err.message || 'Internal Server Error',
-    ...(process.env.NODE_ENV !== 'production' && { stack: err.stack })
+  console.error('Unhandled error:', {
+    message: err.message,
+    stack: err.stack,
+    name: err.name,
+    path: req.path,
+    method: req.method
   });
+  
+  // Don't send stack trace in production
+  const errorResponse = {
+    error: err.message || 'Internal Server Error',
+    ...(process.env.NODE_ENV !== 'production' && { 
+      stack: err.stack,
+      details: err
+    })
+  };
+  
+  res.status(err.status || 500).json(errorResponse);
+});
+
+// Catch-all for unhandled promise rejections in serverless
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
 });
 
 // Export the app for Vercel serverless functions

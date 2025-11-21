@@ -29,6 +29,9 @@ router.get('/', async (req, res) => {
       { url: '/services/prescription-glasses', priority: '0.8', changefreq: 'monthly' },
       { url: '/services/contact-lenses', priority: '0.8', changefreq: 'monthly' },
       { url: '/services/eye-drops', priority: '0.8', changefreq: 'monthly' },
+      { url: '/faqs', priority: '0.9', changefreq: 'monthly' },
+      { url: '/near-me', priority: '0.9', changefreq: 'weekly' },
+      { url: '/eye-care-guide', priority: '0.8', changefreq: 'monthly' },
     ];
 
     // Get dynamic pages

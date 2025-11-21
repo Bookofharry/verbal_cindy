@@ -1,23 +1,19 @@
 // server/index.js
 import express from "express";
-
 import cors from "cors";
-
-import { nanoid } from "nanoid";
-
 import bodyParser from "body-parser";
-
 import dotenv from "dotenv";
 
+// Load environment variables FIRST before any other imports that might need them
+dotenv.config();
+
+// Import routes and configs (import these after dotenv.config())
 import connectDB from "./config/database.js";
 import appointmentRoutes from "./routes/appointmentRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import { sanitizeInput } from "./middleware/validationMiddleware.js";
-
-// Load environment variables
-dotenv.config();
 
 // Check critical environment variables
 const requiredEnvVars = ['MONGODB_URI'];
@@ -100,7 +96,8 @@ app.use(cors({
 }));
 
 // Handle preflight requests explicitly
-app.options('*', cors());
+// Express 5 doesn't support '*' wildcard, so we handle OPTIONS in CORS middleware instead
+// The cors() middleware already handles OPTIONS requests automatically
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -171,12 +168,19 @@ app.use((err, req, res, next) => {
 });
 
 // Catch-all for unhandled promise rejections in serverless
+// CRITICAL: These handlers prevent the function from crashing
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  console.error('❌ Unhandled Rejection at:', promise);
+  console.error('❌ Reason:', reason);
+  // Don't exit in serverless - log and continue
+  // The error will be caught by Express error handler
 });
 
 process.on('uncaughtException', (error) => {
-  console.error('Uncaught Exception:', error);
+  console.error('❌ Uncaught Exception:', error);
+  console.error('❌ Stack:', error.stack);
+  // In serverless, we can't exit - just log
+  // Vercel will handle the function failure
 });
 
 // Export the app for Vercel serverless functions

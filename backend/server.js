@@ -7,6 +7,10 @@ import bodyParser from "body-parser";
 
 import dotenv from "dotenv";
 
+// Load environment variables FIRST before any other imports that might need them
+dotenv.config();
+
+// Import routes and configs (import these after dotenv.config())
 import connectDB from "./config/database.js";
 import { sanitizeInput } from "./middleware/validationMiddleware.js";
 import appointmentRoutes from "./routes/appointmentRoutes.js";

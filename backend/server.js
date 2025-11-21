@@ -17,6 +17,9 @@ import appointmentRoutes from "./routes/appointmentRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 import orderRoutes from "./routes/orderRoutes.js";
 import productRoutes from "./routes/productRoutes.js";
+import blogRoutes from "./routes/blogRoutes.js";
+import eventRoutes from "./routes/eventRoutes.js";
+import sitemapRoutes from "./routes/sitemapRoutes.js";
 
 // Check critical environment variables
 const requiredEnvVars = ['MONGODB_URI'];
@@ -193,6 +196,15 @@ app.use("/api/appointments", appointmentRoutes);
 
 // Order routes
 app.use("/api/orders", orderRoutes);
+
+// Blog routes
+app.use("/api/blog", blogRoutes);
+
+// Event routes
+app.use("/api/events", eventRoutes);
+
+// Sitemap route
+app.use("/sitemap.xml", sitemapRoutes);
 
 
 // Error handling middleware (should be last)

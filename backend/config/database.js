@@ -18,6 +18,10 @@ const connectDB = async () => {
       serverSelectionTimeoutMS: 10000, // Increased timeout
       socketTimeoutMS: 45000,
       connectTimeoutMS: 10000,
+      // Connection pooling for serverless
+      maxPoolSize: 10, // Maximum number of connections in pool
+      minPoolSize: 1, // Minimum number of connections
+      maxIdleTimeMS: 30000, // Close connections after 30s of inactivity
     });
 
     console.log(`✅ MongoDB Connected: ${conn.connection.host}`);

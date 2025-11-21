@@ -88,11 +88,11 @@ router.get('/', async (req, res) => {
 
     const products = await Product.find(query).sort({ createdAt: -1 });
     
-    // Set headers to prevent caching
+    // Cache products for 30 seconds (balance between freshness and performance)
+    // Products change infrequently, so short cache is safe
     res.set({
-      'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
-      'Pragma': 'no-cache',
-      'Expires': '0'
+      'Cache-Control': 'public, max-age=30, s-maxage=30, stale-while-revalidate=60',
+      'ETag': `"${products.length}-${Date.now()}"`, // Simple ETag for cache validation
     });
     
     res.json(products);

@@ -1,19 +1,18 @@
 // server/index.js
 import express from "express";
+
 import cors from "cors";
+
 import bodyParser from "body-parser";
+
 import dotenv from "dotenv";
 
-// Load environment variables FIRST before any other imports that might need them
-dotenv.config();
-
-// Import routes and configs (import these after dotenv.config())
 import connectDB from "./config/database.js";
-import appointmentRoutes from "./routes/appointmentRoutes.js";
-import productRoutes from "./routes/productRoutes.js";
-import orderRoutes from "./routes/orderRoutes.js";
-import authRoutes from "./routes/authRoutes.js";
 import { sanitizeInput } from "./middleware/validationMiddleware.js";
+import appointmentRoutes from "./routes/appointmentRoutes.js";
+import authRoutes from "./routes/authRoutes.js";
+import orderRoutes from "./routes/orderRoutes.js";
+import productRoutes from "./routes/productRoutes.js";
 
 // Check critical environment variables
 const requiredEnvVars = ['MONGODB_URI'];
@@ -63,7 +62,7 @@ const allowedOrigins = process.env.ALLOWED_ORIGINS
     ? [process.env.FRONTEND_URL.trim()]
     : process.env.NODE_ENV === 'production'
       ? [] // No default in production - must be set
-      : ['http://localhost:5173', 'http://localhost:3000']; // Development defaults
+      : ['https://cindyclinc-app.vercel.app', 'http://localhost:3000']; // Development defaults
 
 // CORS middleware - must be before routes
 app.use(cors({
@@ -140,10 +139,23 @@ app.use(async (req, res, next) => {
       await connectDBWithRetry();
     } catch (error) {
       console.error('Failed to connect to database:', error.message);
+      
+      // Provide helpful error messages based on error type
+      let errorMessage = error.message || 'Database connection failed';
+      let hint = 'Make sure MONGODB_URI is set in Vercel environment variables';
+      
+      if (error.message && error.message.includes('IP') || error.message.includes('whitelist')) {
+        hint = 'MongoDB Atlas IP whitelist issue. Add 0.0.0.0/0 to MongoDB Atlas Network Access. See MONGODB_ATLAS_IP_WHITELIST_FIX.md';
+      } else if (error.message && error.message.includes('authentication')) {
+        hint = 'Check MongoDB username and password in MONGODB_URI';
+      } else if (error.message && error.message.includes('ENOTFOUND') || error.message.includes('DNS')) {
+        hint = 'Check MongoDB cluster URL in MONGODB_URI';
+      }
+      
       return res.status(503).json({
         error: 'Database connection failed',
-        message: error.message || 'Please check your MongoDB connection string and environment variables',
-        hint: 'Make sure MONGODB_URI is set in Vercel environment variables'
+        message: errorMessage,
+        hint: hint
       });
     }
   }

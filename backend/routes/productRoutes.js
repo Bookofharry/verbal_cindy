@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import mongoose from 'mongoose';
 import Product from '../models/Product.js';
 import cloudinary from '../config/cloudinary.js';
 import { Readable } from 'stream';
@@ -86,7 +87,27 @@ router.get('/', async (req, res) => {
     const { category } = req.query;
     const query = category ? { category } : {};
 
-    const products = await Product.find(query).sort({ createdAt: -1 });
+    // Check if database is connected
+    const dbState = mongoose.connection.readyState;
+    if (dbState !== 1) {
+      console.error('Database not connected. ReadyState:', dbState, 'State:', ['disconnected', 'connected', 'connecting', 'disconnecting'][dbState]);
+      
+      // Return empty array with proper error message instead of crashing
+      // This allows the frontend to continue working
+      return res.status(503).json({ 
+        error: 'Database connection unavailable',
+        message: 'Please try again in a moment',
+        products: [] // Return empty array so frontend doesn't crash
+      });
+    }
+
+    // Execute query with timeout protection
+    const products = await Promise.race([
+      Product.find(query).sort({ createdAt: -1 }),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Database query timeout')), 10000)
+      )
+    ]);
     
     // Cache products for 30 seconds (balance between freshness and performance)
     // Products change infrequently, so short cache is safe
@@ -97,8 +118,23 @@ router.get('/', async (req, res) => {
     
     res.json(products);
   } catch (error) {
-    console.error('Error fetching products:', error);
-    res.status(500).json({ error: 'Failed to fetch products' });
+    console.error('Error fetching products:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name,
+      category: req.query.category
+    });
+    
+    // Provide more detailed error information
+    const errorMessage = process.env.NODE_ENV === 'production' 
+      ? 'Failed to fetch products. Please try again later.'
+      : `Failed to fetch products: ${error.message}`;
+    
+    res.status(500).json({ 
+      error: 'Failed to fetch products',
+      message: errorMessage,
+      ...(process.env.NODE_ENV !== 'production' && { details: error.message })
+    });
   }
 });
 
